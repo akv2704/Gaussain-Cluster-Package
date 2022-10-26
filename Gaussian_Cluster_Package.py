@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 import strawberryfields as sf
 import matplotlib.pyplot as plt
+import sys
 ####################################################Functions######################################################
 #X is a symplectic square matrix
 def SymToUni(X):
@@ -84,7 +85,74 @@ def PatternedHomodyne(X,Y):
         
     return Target
         
+def BeamSplitter(M,N,d,eta):
+
+    '''Beam Splitter is the function to get the beamsplitter transform for d modes to mix the jth mode with the
+    kth mode and so on with efficiency eta. It is a 2d x 2d symplectic transform.
+    
+    The function returns the beam splitter transform in the xpxp format.
+    Make sure M is a sensible number and is less than the total number ofmodes.
+    
+    %%%%%%%%%--M--%%%%%%-M+1-%%%%%%%%%%%%-N-%%%%%%%%%%-N+1-%%%%%%%%%
+    %% || sqrt(eta)       0         sqrt(1-eta)        0       || %%-M-
+    %% || 0           sqrt(eta)          0        sqrt(1-eta)  || %%-M+1-
+    %% ||-sqrt(1-eta)     0           sqrt(eta)        0       || %%-N-
+    %% || 0         -sqrt(1-eta)         0          sqrt(eta)  || %%-N+1-
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+    '''
+    Z=np.zeros((2*d,2*d), dtype=float);
+      
+    q_index=[];
+    p_index=[];
+    M=M-1;
+    N=N-1;
+
+    for j in range(0,2*d,2):
+            q_index.append(j);
+            p_index.append(j+1);
+    
+   
         
+    for j in range(2*d):
+               
+                        
+                 
+            if (j==q_index[M]):
+                
+                        
+                        
+                        Z[j][j]=np.sqrt(eta);
+                        Z[j][j+1]=0;
+                        Z[j][q_index[N]]=np.sqrt(1-eta);
+                        Z[j][q_index[N]+1]=0;
+            
+                        Z[j+1][j]=0;
+                        Z[j+1][j+1]=np.sqrt(eta);
+                        Z[j+1][q_index[N]]=0;
+                        Z[j+1][q_index[N]+1]=np.sqrt(1-eta);
+            
+                        Z[q_index[N]][j]=np.sqrt(1-eta);
+                        Z[q_index[N]][j+1]=0;
+                        Z[q_index[N]][q_index[N]]=-np.sqrt(eta);
+                        Z[q_index[N]][q_index[N]+1]=0;
+            
+                        Z[q_index[N]+1][j]=0;
+                        Z[q_index[N]+1][j+1]=np.sqrt(1-eta);
+                        Z[q_index[N]+1][q_index[N]]=0;
+                        Z[q_index[N]+1][q_index[N]+1]=-np.sqrt(eta);
+            elif ((j in [(q_index[M]),(p_index[M]),(q_index[N]),(p_index[N])])==False):
+                        #Here, we set the idle B modes to 1 so the quadratures
+                        #don't disappear.
+                        
+                        Z[j][j]=1;
+                        
+                
+               
+        
+        
+    BSm=Z;                   
+    return BSm;    
         
 def BS(M,d,eta):
 
@@ -166,6 +234,57 @@ def BS(M,d,eta):
         
     return BSm;
 
+def SingleModeSqueezing(r,n,angle):
+    '''
+    
+
+    Parameters
+    ----------
+    r : Array
+        Array of mode wise squeezing parameters.
+    n : integer number
+        number of modes.
+    angle : Array
+        Array of angles of squeezing. Defaults to 0.
+
+    Returns
+    -------
+    Symplectic corresponding to single mode squeezing on n modes.
+
+    '''
+    
+    if len(sys.argv)==3:
+        angle=np.zeros(n)
+    
+    
+    
+    SMSV=[]
+    for i in range(n):
+        SMSV.append((np.cosh(r[i])*np.eye(2))-np.sinh(r[i])*np.array([[np.cos(angle[i]), np.sin(angle[i])],[-np.sin(angle[i]), np.cos(angle[i])]]))
+    
+    SingleModeSym=sp.linalg.block_diag(*tuple(SMSV))
+    
+    return np.array(SingleModeSym)
+
+
+def Rotation(n, phi):
+    '''
+    n=number of modes one wants to rotate
+    phi=array of angles by which each modes is to be rotated
+    
+    Returns: a symplectic of rotation in all the modes.
+    '''
+    #rotation matrix of a single mode
+    rot=[];
+    
+    for i in range(n):
+            rot.append([[np.cos(phi[i]), np.sin(phi[i])],[-np.sin(phi[i]), np.cos(phi[i])]]);
+    
+    #build rotation symplectic for all n modes
+    rot_sym=sp.linalg.block_diag(*tuple(rot))
+    
+    return np.array(rot_sym)
+
 def MakeCluster(r,n,delay1,delay2,cltype):
         '''Function returns the ''4n X 4n'' covariance matrix of a 2D cluster state in the AxApBxBp (xpxp) format.
         r sets the initial squeezing level n is the number of temporal modes in each spatial mode, delay 1 sets the first delay and delay 2 sets the second delay. 
@@ -176,15 +295,19 @@ def MakeCluster(r,n,delay1,delay2,cltype):
         #The matrix of all EPR pairs uncorrelated
         EPR=sp.linalg.block_diag(*b)
         #1D cluster
-        M1D= np.matmul(np.matmul(BS(delay1,2*n,0.5),EPR),np.transpose(BS(delay1,2*n,0.5)));
+        M1D= np.matmul(np.matmul(BS(delay1+1,2*n,0.5),EPR),np.transpose(BS(delay1+1,2*n,0.5)));
         if cltype==1:
             return M1D;            
             
-        else:
+        elif(len(sys.argv)<3):
             #2D cluster
-            M2D= np.matmul(np.matmul(BS(delay2,2*n,0.5),M1D),np.transpose(BS(delay2,2*n,0.5)));
+            M2D= np.matmul(np.matmul(BS(delay2+1,2*n,0.5),M1D),np.transpose(BS(delay2+1,2*n,0.5)));
             return M2D;   
-
+        
+        elif(cltype==2):
+            M2D= np.matmul(np.matmul(BS(delay2+1,2*n,0.5),M1D),np.transpose(BS(delay2+1,2*n,0.5)));
+            return M2D;
+        
 def Permute_XPXP_to_XXPP(M):
         '''The permute function changes a (2d x 2d) d-mode matrix M from [q,p,q,p,q,p] format to [q,q,q,p,p,p].
         '''
@@ -242,3 +365,24 @@ def Permute_XXPP_to_XPXP(M):
         
         G=np.matmul(np.matmul(np.transpose(T),M),(T));
         return G;
+    
+def covariance_to_unitary(V):
+    '''
+    
+
+    Parameters
+    ----------
+    V : 2D array
+        A positive definite matrix or covariance matrix.
+
+    Returns
+    -------
+    complex 2D array
+        The Unitary that transforms vacua into this covariance matrix.
+
+    '''
+    (S_Eigen,S)=sf.decompositions.williamson(Permute_XPXP_to_XXPP(V),tol=1e-13)
+    (K,Sr,L)=sf.decompositions.bloch_messiah(S,tol=1e-6)
+    A=SymToUni(K);
+    
+    return A;
