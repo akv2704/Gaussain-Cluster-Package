@@ -414,47 +414,64 @@ def Fidelity_dist(M,N):
         The histogram and relative entropy with respect to the Haar measure on the respective Unitary space.
     '''
     Haar_list=[]
+    Fid_Haar=[]
+    Fid=[]
     Fid_Haar_Amp=[]
     Fid_Haar_Phase=[]
     Fid_Amp=[]
     Fid_Phase=[]
     #Generate a K-sample of NxN Haar random Unitaries
     j=0;
-    while j<900:
+    while j<len(M):
         Haar_list.append(qr_haar(N))
         j=j+1       
     
     for i in range(len(Haar_list)):
         for j in range(len(Haar_list)):
             T_Haar=np.matmul(np.conjugate(np.transpose(Haar_list[i])),Haar_list[j])
+            Fid_Haar.append(np.trace(T_Haar))
             Fid_Haar_Amp.append(np.abs(np.trace(T_Haar)))
             Fid_Haar_Phase.append(np.angle(np.trace(T_Haar)))
     
     for i in range(len(M)):
         for j in range(len(M)):
             T=np.matmul(np.conjugate(np.transpose(M[i])),M[j])
+            Fid.append((1/N)*np.trace(T))
             Fid_Amp.append(np.abs((1/N)*np.trace(T)))
             Fid_Phase.append(np.angle((1/N)*np.trace(T)))
             
-    KL_divergence=sum(sp.special.rel_entr(Fid_Amp,Fid_Haar_Amp))/(len(sp.special.rel_entr(Fid_Amp,Fid_Haar_Amp)))
-    KL_divergence_Phase=sum(sp.special.rel_entr(Fid_Phase,Fid_Haar_Phase))/(len(sp.special.rel_entr(Fid_Phase,Fid_Haar_Phase)))
-  
+            
+    nbins=300
+    KL_divergence=sum(sp.special.rel_entr(Fid_Haar_Amp,Fid_Amp))
     
-   
+
     plt.figure()
-    plt.hist(Fid_Amp, density=True, range=(0,1), bins=300, label='Haar Distributed unitaries',alpha=0.75)
-    plt.hist(Fid_Haar_Amp, density=True, range=(0,1), bins=300, label='Generated Unitaries',alpha=0.3,color='green')
+    plt.hist(Fid_Amp, density=True, range=(0,1), bins=nbins, label='Haar Distributed unitaries',alpha=0.75)
+    plt.hist(Fid_Haar_Amp, density=True, range=(0,1), bins=nbins, label='Generated Unitaries',alpha=0.3,color='green')
     plt.text(0.45, 1.2, 'Kullback-Liebler Cross Entropy:'+str(round(KL_divergence,2)))
     plt.ylabel("PDF of |Fidelity| : p(|F|)")
     plt.xlabel("|Fidelity| (|F|)")
     plt.legend()
     plt.title("Expressibility over the Unitary space of U("+str(N)+').');
     
+    
+    Haar_real=np.real(Fid_Haar)
+    Haar_im=np.imag(Fid_Haar)
+    Fid_real=np.real(Fid)
+    Fid_im=np.imag(Fid)
+    
+    
     plt.figure()
-    plt.hist(Fid_Phase, density=True, range=(-np.pi,np.pi), bins=300, label='Haar Distributed unitaries',alpha=0.75)
-    plt.hist(Fid_Haar_Phase, density=True, range=(-np.pi,np.pi), bins=300, label='Generated Unitaries',alpha=0.3,color='green')
-    plt.text(0.45, 1.2, 'Kullback-Liebler Cross Entropy:'+str(round(KL_divergence_Phase,2)))
-    plt.ylabel("PDF of angle of Fidelity : p(angle(F))")
-    plt.xlabel("Angle of Fidelity (angle(F))")
-    plt.legend()
-    plt.title("Expressibility over the Unitary space of U("+str(N)+').');
+    plt.hist2d(Haar_real, Haar_im, bins=[150,150],range=[[-1,1],[-1,1]],cmap=plt.cm.seismic)
+    plt.xlabel("Re(F)")
+    plt.ylabel("Im(F)")
+    plt.colorbar()
+    plt.title("PDF(F): Haar Distributed U("+str(N)+') matrices over the unit circle.');
+    
+    plt.figure()
+    plt.hist2d(Fid_real, Fid_im, bins=[150,150],range=[[-1,1],[-1,1]],cmap=plt.cm.seismic)
+    plt.xlabel("Re(F)")
+    plt.ylabel("Im(F)")
+    plt.colorbar()
+    plt.title("PDF(F): Programmed "+str(N)+"-D Unitary matrices over the unit circle.");
+    
