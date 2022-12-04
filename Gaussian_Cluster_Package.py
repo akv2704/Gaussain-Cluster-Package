@@ -429,9 +429,9 @@ def Fidelity_dist(M,N):
     for i in range(len(Haar_list)):
         for j in range(len(Haar_list)):
             T_Haar=np.matmul(np.conjugate(np.transpose(Haar_list[i])),Haar_list[j])
-            Fid_Haar.append(np.trace(T_Haar))
-            Fid_Haar_Amp.append(np.abs(np.trace(T_Haar)))
-            Fid_Haar_Phase.append(np.angle(np.trace(T_Haar)))
+            Fid_Haar.append((1/N)*np.trace(T_Haar))
+            Fid_Haar_Amp.append(np.abs((1/N)*np.trace(T_Haar)))
+            Fid_Haar_Phase.append(np.angle((1/N)*np.trace(T_Haar)))
     
     for i in range(len(M)):
         for j in range(len(M)):
