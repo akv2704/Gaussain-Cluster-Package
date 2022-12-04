@@ -1,15 +1,24 @@
 # -*- coding: utf-8 -*-
 """
+Created on Sat Dec  3 13:51:28 2022
+
+@author: Abhinav Verma
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Fri Sep 16 14:42:31 2022
 @author: abhve
 """
+import sys
 import scipy as sp
 import csv
 import pandas as pd
 import numpy as np
 import strawberryfields as sf
 import matplotlib.pyplot as plt
-import sys
+from numpy.linalg import qr
+
 ####################################################Functions######################################################
 #X is a symplectic square matrix
 def SymToUni(X):
@@ -237,7 +246,6 @@ def BS(M,d,eta):
 def SingleModeSqueezing(r,n,angle):
     '''
     
-
     Parameters
     ----------
     r : Array
@@ -246,11 +254,9 @@ def SingleModeSqueezing(r,n,angle):
         number of modes.
     angle : Array
         Array of angles of squeezing. Defaults to 0.
-
     Returns
     -------
     Symplectic corresponding to single mode squeezing on n modes.
-
     '''
     
     if len(sys.argv)==3:
@@ -369,20 +375,86 @@ def Permute_XXPP_to_XPXP(M):
 def covariance_to_unitary(V):
     '''
     
-
     Parameters
     ----------
     V : 2D array
-        A positive definite matrix or covariance matrix.
-
+        A positive definite matrix or covariance matrix in XPXP format.
     Returns
     -------
     complex 2D array
         The Unitary that transforms vacua into this covariance matrix.
-
     '''
     (S_Eigen,S)=sf.decompositions.williamson(Permute_XPXP_to_XXPP(V),tol=1e-13)
     (K,Sr,L)=sf.decompositions.bloch_messiah(S,tol=1e-6)
     A=SymToUni(K);
     
     return A;
+
+def qr_haar(N):
+    """Generate a Haar-random matrix using the QR decomposition."""
+    # Step 1
+    A, B = np.random.normal(size=(N, N)), np.random.normal(size=(N, N))
+    Z = A + 1j * B
+
+    # Step 2
+    Q, R = qr(Z)
+
+    # Step 3
+    Lambda = np.diag([R[i, i] / np.abs(R[i, i]) for i in range(N)])
+
+    # Step 4
+    return np.dot(Q, Lambda)
+
+
+def Fidelity_dist(M,N):
+    '''
+    M=Array of sampled Unitary Matrices.
+    N=Size of the unitary matrix
+    Returns:
+        The histogram and relative entropy with respect to the Haar measure on the respective Unitary space.
+    '''
+    Haar_list=[]
+    Fid_Haar_Amp=[]
+    Fid_Haar_Phase=[]
+    Fid_Amp=[]
+    Fid_Phase=[]
+    #Generate a K-sample of NxN Haar random Unitaries
+    j=0;
+    while j<900:
+        Haar_list.append(qr_haar(N))
+        j=j+1       
+    
+    for i in range(len(Haar_list)):
+        for j in range(len(Haar_list)):
+            T_Haar=np.matmul(np.conjugate(np.transpose(Haar_list[i])),Haar_list[j])
+            Fid_Haar_Amp.append(np.abs(np.trace(T_Haar)))
+            Fid_Haar_Phase.append(np.angle(np.trace(T_Haar)))
+    
+    for i in range(len(M)):
+        for j in range(len(M)):
+            T=np.matmul(np.conjugate(np.transpose(M[i])),M[j])
+            Fid_Amp.append(np.abs((1/N)*np.trace(T)))
+            Fid_Phase.append(np.angle((1/N)*np.trace(T)))
+            
+    KL_divergence=sum(sp.special.rel_entr(Fid_Amp,Fid_Haar_Amp))/(len(sp.special.rel_entr(Fid_Amp,Fid_Haar_Amp)))
+    KL_divergence_Phase=sum(sp.special.rel_entr(Fid_Phase,Fid_Haar_Phase))/(len(sp.special.rel_entr(Fid_Phase,Fid_Haar_Phase)))
+  
+    
+   
+    plt.figure()
+    plt.hist(Fid_Amp, density=True, range=(0,1), bins=300, label='Haar Distributed unitaries',alpha=0.75)
+    plt.hist(Fid_Haar_Amp, density=True, range=(0,1), bins=300, label='Generated Unitaries',alpha=0.3,color='green')
+    plt.text(0.45, 1.2, 'Kullback-Liebler Cross Entropy:'+str(round(KL_divergence,2)))
+    plt.ylabel("PDF of |Fidelity| : p(|F|)")
+    plt.xlabel("|Fidelity| (|F|)")
+    plt.legend()
+    plt.title("Expressibility over the Unitary space of U("+str(N)+').');
+    
+    plt.figure()
+    plt.hist(Fid_Phase, density=True, range=(-np.pi,np.pi), bins=300, label='Haar Distributed unitaries',alpha=0.75)
+    plt.hist(Fid_Haar_Phase, density=True, range=(-np.pi,np.pi), bins=300, label='Generated Unitaries',alpha=0.3,color='green')
+    plt.text(0.45, 1.2, 'Kullback-Liebler Cross Entropy:'+str(round(KL_divergence_Phase,2)))
+    plt.ylabel("PDF of angle of Fidelity : p(angle(F))")
+    plt.xlabel("Angle of Fidelity (angle(F))")
+    plt.legend()
+    plt.title("Expressibility over the Unitary space of U("+str(N)+').');
