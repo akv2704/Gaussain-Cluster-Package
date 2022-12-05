@@ -314,6 +314,98 @@ def MakeCluster(r,n,delay1,delay2,cltype):
             M2D= np.matmul(np.matmul(BS(delay2+1,2*n,0.5),M1D),np.transpose(BS(delay2+1,2*n,0.5)));
             return M2D;
         
+def ChoppedCluster(r,s,delay1,delay2,cltype):
+    '''
+    
+
+    Parameters
+    ----------
+    n : integer
+        chop a large cluster to a 2n mode smaller cluster.
+
+    Returns
+    -------
+    covariance matrix of the chopped up cluster oftype cltype
+
+    '''
+   
+    n=s+9;
+    V=MakeCluster(r,n,delay1,delay2,cltype);
+        
+    ################################FIXED BASIS SETTINGS############################################################
+    
+    PMM=[[1, 0],[0, 0]]; #projector matrix
+    Target=V;
+    
+    
+    def HD_last_mode(Target):
+        q=len(Target[0])
+        #select and construct a rotator in the SO(2) group using the pattern.
+        R=[[np.cos(0), -np.sin(0)],[np.sin(0), np.cos(0)]]; 
+              
+        #Extract the matrix (2 x 2) for homodyned mode with rotation
+        #implemented.
+    
+            
+        B=np.matmul(np.matmul(R,Target[q-2:q,(q-1)-1:q]),np.transpose(R));
+        #Extract the matrix (2n-2 x 2n-2) for the rest of the modes
+        A=Target[0:q-2,0:q-2];
+        #extract the off diagonal block matrix and its transpose with rotation
+        #implemented.
+        C=np.matmul(Target[0:q-2,(q-1)-1:(q)],np.transpose(R));
+        CT=np.transpose(C);
+            
+                   
+        #subtrahend for the homodyne result
+        G=np.matmul(np.matmul(C,PMM),CT);
+        #The matrix for the Moore-Penrose psuedoinverse
+        v=np.matmul(np.matmul(PMM,B),PMM);
+        scalar=v[0,0];
+    
+        if scalar==0:
+            Target=A; #Moore penrose inverse of a null matrix is null.
+        else:
+            Target=A-G*(1/scalar); #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
+            
+        return Target
+        
+        
+   
+    def HD_first_mode(Target):
+        #select and construct a rotator in the SO(2) group using the pattern.
+        R=[[np.cos(0), -np.sin(0)],[np.sin(0), np.cos(0)]];
+              
+        #Extract the matrix (2 x 2) for homodyned mode with rotation
+        #implemented.
+    
+        
+        B=np.matmul(np.matmul(R,Target[0:2,0:2]),np.transpose(R));
+        #Extract the matrix (2n-2 x 2n-2) for the rest of the modes
+        A=Target[2:,2:];
+        #extract the off diagonal block matrix and its transpose with rotation
+        #implemented.
+        C=np.matmul(Target[2:,0:2],np.transpose(R));
+        CT=np.transpose(C);
+            
+                   
+        #subtrahend for the homodyne result
+        G=np.matmul(np.matmul(C,PMM),CT);
+        #The matrix for the Moore-Penrose psuedoinverse
+        v=np.matmul(np.matmul(PMM,B),PMM);
+        scalar=v[0,0];
+    
+        if scalar==0:
+            Target=A; #Moore penrose inverse of a null matrix is null.
+        else:
+            Target=A-G*(1/scalar); #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
+        
+        return Target 
+    for i in range(n-s):
+        Target=HD_last_mode(Target);
+        Target=HD_first_mode(Target);
+    
+    
+    return Target;
 def Permute_XPXP_to_XXPP(M):
         '''The permute function changes a (2d x 2d) d-mode matrix M from [q,p,q,p,q,p] format to [q,q,q,p,p,p].
         '''
