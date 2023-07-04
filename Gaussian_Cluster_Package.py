@@ -18,8 +18,65 @@ import numpy as np
 import strawberryfields as sf
 import matplotlib.pyplot as plt
 from numpy.linalg import qr
-
+from numpy import linalg as la
 ####################################################Functions######################################################
+
+def chop(expr, delta=10**-10):
+    return np.ma.masked_inside(expr, -delta, delta).filled(0)
+
+
+def nearestPD(A):
+    """Find the nearest positive-definite matrix to input
+
+    A Python/Numpy port of John D'Errico's `nearestSPD` MATLAB code [1], which
+    credits [2].
+
+    [1] https://www.mathworks.com/matlabcentral/fileexchange/42885-nearestspd
+
+    [2] N.J. Higham, "Computing a nearest symmetric positive semidefinite
+    matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
+    """
+
+    B = (A + A.T) / 2
+    _, s, V = la.svd(B)
+
+    H = np.dot(V.T, np.dot(np.diag(s), V))
+
+    A2 = (B + H) / 2
+
+    A3 = (A2 + A2.T) / 2
+
+    if isPD(A3):
+        return A3
+
+    spacing = np.spacing(la.norm(A))
+    # The above is different from [1]. It appears that MATLAB's `chol` Cholesky
+    # decomposition will accept matrixes with exactly 0-eigenvalue, whereas
+    # Numpy's will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
+    # for `np.spacing`), we use the above definition. CAVEAT: our `spacing`
+    # will be much larger than [1]'s `eps(mineig)`, since `mineig` is usually on
+    # the order of 1e-16, and `eps(1e-16)` is on the order of 1e-34, whereas
+    # `spacing` will, for Gaussian random matrixes of small dimension, be on
+    # othe order of 1e-16. In practice, both ways converge, as the unit test
+    # below suggests.
+    I = np.eye(A.shape[0])
+    k = 1
+    while not isPD(A3):
+        mineig = np.min(np.real(la.eigvals(A3)))
+        A3 += I * (-mineig * k**2 + spacing)
+        k += 1
+
+    return A3
+
+
+def isPD(B):
+    """Returns true when input is positive-definite, via Cholesky"""
+    try:
+        _ = la.cholesky(B)
+        return True
+    except la.LinAlgError:
+        return False
+
 #X is a symplectic square matrix
 def SymToUni(X):
     '''Turn a Symplectic matrix X in the xxpp format to a Unitary matrix using the rectangular decomposition.
@@ -266,12 +323,51 @@ def SingleModeSqueezing(r,n,angle):
     
     SMSV=[]
     for i in range(n):
-        SMSV.append((np.cosh(r[i])*np.eye(2))-np.sinh(r[i])*np.array([[np.cos(angle[i]), np.sin(angle[i])],[-np.sin(angle[i]), np.cos(angle[i])]]))
+        SMSV.append((np.cosh(r[i])*np.eye(2))-np.sinh(r[i])*np.array([[np.cos(angle[i]), np.sin(angle[i])],[np.sin(angle[i]), -np.cos(angle[i])]]))
     
     SingleModeSym=sp.linalg.block_diag(*tuple(SMSV))
     
     return np.array(SingleModeSym)
 
+def TwoModeSqueezing(r,n,angle):
+    '''
+    
+    Parameters
+    ----------
+    r : Array
+        Array of mode wise squeezing parameters.
+    n : integer number
+        number of modes.
+    angle : Array
+        Array of angles of squeezing. Defaults to 0.
+    Returns
+    -------
+    Symplectic corresponding to two mode squeezing on n modes.
+    '''
+    
+    if len(sys.argv)==3:
+        angle=np.zeros(n)
+    
+    
+    
+    TMSV=[]
+    for i in range(n):
+        rot=np.array([[np.cos(angle[i]), np.sin(angle[i])],[np.sin(angle[i]),-np.cos(angle[i])]])
+        TMSV.append(
+            
+            np.block([
+                
+                [np.cosh(r[i])*np.eye(2), -np.sinh(r[i])*rot],
+                [-np.sinh(r[i])*rot, np.cosh(r[i])*np.eye(2)]
+                
+                
+                ])
+            
+            )
+    
+    TwoModeSym=sp.linalg.block_diag(*tuple(TMSV))
+    
+    return np.array(TwoModeSym)
 
 def Rotation(n, phi):
     '''
@@ -300,6 +396,28 @@ def MakeCluster(r,n,delay1,delay2,cltype):
         b=[TMSV]*(n)
         #The matrix of all EPR pairs uncorrelated
         EPR=sp.linalg.block_diag(*b)
+        #1D cluster
+        M1D= np.matmul(np.matmul(BS(delay1+1,2*n,0.5),EPR),np.transpose(BS(delay1+1,2*n,0.5)));
+        if cltype==1:
+            return M1D;            
+            
+        elif(len(sys.argv)<3):
+            #2D cluster
+            M2D= np.matmul(np.matmul(BS(delay2+1,2*n,0.5),M1D),np.transpose(BS(delay2+1,2*n,0.5)));
+            return M2D;   
+        
+        elif(cltype==2):
+            M2D= np.matmul(np.matmul(BS(delay2+1,2*n,0.5),M1D),np.transpose(BS(delay2+1,2*n,0.5)));
+            return M2D;
+        
+def MakeDynamicCluster(r,n,angle,delay1,delay2,cltype):
+        '''Function returns the ''4n X 4n'' covariance matrix of a 2D cluster state in the AxApBxBp (xpxp) format.
+        r sets the initial squeezing levels, n is the number of temporal modes in each spatial mode, delay 1 sets the first delay and delay 2 sets the second delay. 
+        cltype sets the cluster type to 1D (1) or 2D(2)(default).
+        '''    
+        TMSV=TwoModeSqueezing(r,n,angle)
+        #The matrix of all EPR pairs uncorrelated
+        EPR=0.5*TMSV.dot(np.transpose(TMSV))
         #1D cluster
         M1D= np.matmul(np.matmul(BS(delay1+1,2*n,0.5),EPR),np.transpose(BS(delay1+1,2*n,0.5)));
         if cltype==1:
@@ -476,13 +594,13 @@ def covariance_to_unitary(V):
     complex 2D array
         The Unitary that transforms vacua into this covariance matrix.
     '''
-    (S_Eigen,S)=sf.decompositions.williamson(Permute_XPXP_to_XXPP(V),tol=1e-13)
+    (S_Eigen,S)=sf.decompositions.williamson(V,tol=1e-13)
     (K,Sr,L)=sf.decompositions.bloch_messiah(S,tol=1e-6)
-    A=SymToUni(K);
+    A=SymToUni(L);
     
     return A;
 
-def qr_haar(N):
+def Generate_haar_unitary(N):
     """Generate a Haar-random matrix using the QR decomposition."""
     # Step 1
     A, B = np.random.normal(size=(N, N)), np.random.normal(size=(N, N))
@@ -497,73 +615,294 @@ def qr_haar(N):
     # Step 4
     return np.dot(Q, Lambda)
 
-
-def Fidelity_dist(M,N):
+def Generate_random_symplectic(N,passive,mu,sigma):
     '''
-    M=Array of sampled Unitary Matrices.
-    N=Size of the unitary matrix
-    Returns:
-        The histogram and relative entropy with respect to the Haar measure on the respective Unitary space.
+    Generate a haar random symplectioc matrix for N modes.
+    passive=True gives a passive matrix
+    passive=False gives an active matrix with squeeezing sampled from a uniform distribution
     '''
-    Haar_list=[]
-    Fid_Haar=[]
-    Fid=[]
-    Fid_Haar_Amp=[]
-    Fid_Haar_Phase=[]
-    Fid_Amp=[]
-    Fid_Phase=[]
-    #Generate a K-sample of NxN Haar random Unitaries
-    j=0;
-    while j<len(M):
-        Haar_list.append(qr_haar(N))
-        j=j+1       
     
-    for i in range(len(Haar_list)):
-        for j in range(len(Haar_list)):
-            T_Haar=np.matmul(np.conjugate(np.transpose(Haar_list[i])),Haar_list[j])
-            Fid_Haar.append((1/N)*np.trace(T_Haar))
-            Fid_Haar_Amp.append(np.abs((1/N)*np.trace(T_Haar)))
-            Fid_Haar_Phase.append(np.angle((1/N)*np.trace(T_Haar)))
+    U=Generate_haar_unitary(N);
+    O = np.block([[U.real, -U.imag], [U.imag, U.real]])
     
-    for i in range(len(M)):
-        for j in range(len(M)):
-            T=np.matmul(np.conjugate(np.transpose(M[i])),M[j])
-            Fid.append((1/N)*np.trace(T))
-            Fid_Amp.append(np.abs((1/N)*np.trace(T)))
-            Fid_Phase.append(np.angle((1/N)*np.trace(T)))
-            
-            
-    nbins=300
-    KL_divergence=sum(sp.special.rel_entr(Fid_Haar_Amp,Fid_Amp))
+    if passive==True:
+        return O
+    
+    U=Generate_haar_unitary(N);
+    P= np.block([[U.real, -U.imag], [U.imag, U.real]])
+    
+    r = np.random.normal(mu,sigma,N)
+    Sq = np.diag(np.concatenate([np.exp(-r), np.exp(r)]))
+    
+    return np.matmul(O,np.matmul(Sq,P))
+
+def Plot_graph(Z):
+    '''
+
+    Parameters
+    ----------
+    Z : 2D complex matrix
+        Adjacency matrix.
+
+    Returns
+    -------
+    plots a graph given the adjacency matrix.
+
+    '''
+    import networkx as nx 
+    n=len(Z[0]);
+    G = nx.DiGraph()
+    for i in range(n): 
+        for j in range(n): 
+            if np.abs(Z[i][j]) != 0: 
+                G.add_edge(i,j) 
+      
+    
+    nx.draw( G, with_labels=True, font_weight='bold',node_color='b', edge_color='k' )
+    #edge_labels = nx.draw_networkx_edge_labels(G, pos=nx.spring_layout(G)) 
+    plt.show()
     
 
-    plt.figure()
-    plt.hist(Fid_Amp, density=True, range=(0,1), bins=nbins, label='Haar Distributed unitaries',alpha=0.75)
-    plt.hist(Fid_Haar_Amp, density=True, range=(0,1), bins=nbins, label='Generated Unitaries',alpha=0.3,color='green')
-    plt.text(0.45, 1.2, 'Kullback-Liebler Cross Entropy:'+str(round(KL_divergence,2)))
-    plt.ylabel("PDF of |Fidelity| : p(|F|)")
-    plt.xlabel("|Fidelity| (|F|)")
-    plt.legend()
-    plt.title("Expressibility over the Unitary space of U("+str(N)+').');
+def HD_last_mode(Target,ang):
+        PMM=np.array([[1, 0],[0, 0]]); #projector matrix
+        q=len(Target[0])
+        #select and construct a rotator in the SO(2) group using the pattern.
+        R=np.array([[np.cos(ang), -np.sin(ang)],[np.sin(ang), np.cos(ang)]]); 
+              
+        #Extract the matrix (2 x 2) for homodyned mode with rotation
+        #implemented.
+    
+            
+        B=np.matmul(np.matmul(R,Target[q-2:q,(q-1)-1:q]),np.transpose(R));
+        #Extract the matrix (2n-2 x 2n-2) for the rest of the modes
+        A=Target[0:q-2,0:q-2];
+        #extract the off diagonal block matrix and its transpose with rotation
+        #implemented.
+        C=np.matmul(Target[0:q-2,(q-1)-1:(q)],np.transpose(R));
+        CT=np.transpose(C);
+            
+                   
+        #subtrahend for the homodyne result
+        G=np.matmul(np.matmul(C,PMM),CT);
+        #The matrix for the Moore-Penrose psuedoinverse
+        v=np.matmul(np.matmul(PMM,B),PMM);
+        scalar=v[0,0];
+    
+        if scalar==0:
+            Target=A; #Moore penrose inverse of a null matrix is null.
+        else:
+            Target=A-G*(1/scalar); #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
+            
+        return Target
+        
+        
+   
+def HD_first_mode(Target,ang):
+        PMM=np.array([[1, 0],[0, 0]]);
+        #select and construct a rotator in the SO(2) group using the pattern.
+        R=np.array([[np.cos(ang), -np.sin(ang)],[np.sin(ang), np.cos(ang)]]);
+              
+        #Extract the matrix (2 x 2) for homodyned mode with rotation
+        #implemented.
+    
+        
+        B=np.matmul(np.matmul(R,Target[0:2,0:2]),np.transpose(R));
+        #Extract the matrix (2n-2 x 2n-2) for the rest of the modes
+        A=Target[2:,2:];
+        #extract the off diagonal block matrix and its transpose with rotation
+        #implemented.
+        C=np.matmul(Target[2:,0:2],np.transpose(R));
+        CT=np.transpose(C);
+            
+                   
+        #subtrahend for the homodyne result
+        G=np.matmul(np.matmul(C,PMM),CT);
+        #The matrix for the Moore-Penrose psuedoinverse
+        v=np.matmul(np.matmul(PMM,B),PMM);
+        scalar=v[0,0];
+    
+        if scalar==0:
+            Target=A; #Moore penrose inverse of a null matrix is null.
+        else:
+            Target=A-G*(1/scalar); #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
+        
+        return Target 
+    
+def PureFidelity(Ax,Bx):
+    '''
+    
+    quadrature format: xpxp
+    Parameters
+    ----------
+    A : numpy array
+        Covariance matrix.
+    B : numpy array
+        Covariance matrix.
+
+    Returns
+    -------
+    The overlap between states corresponding to the covariance matrices Ax and Bx.
+    These correspond to both pure states.
+
+    '''
+    F=1/np.sqrt(np.sqrt(np.linalg.det(Ax+Bx)))
+    
+    return F**2
+
+    
+def MixedFidelity(Ax,Bx):
+    '''
+    
+    quadrature format: xpxp
+    Parameters
+    ----------
+    A : numpy array
+        Covariance matrix.
+    B : numpy array
+        Covariance matrix.
+
+    Returns
+    -------
+    The overlap between states corresponding to the covariance matrices Ax and Bx.
+    These correspond to both generally mixed states.
+
+    '''
+    Ohm=np.array([
+        
+        [0,1,0,0],
+        [-1,0,0,0],
+        [0,0,0,1],
+        [0,0,-1,0]
+        
+        ])
+    
+    V = np.matmul(np.matmul(np.transpose(Ohm),np.linalg.inv((Ax + Bx))),(0.25*Ohm + np.matmul(np.matmul(Bx,Ohm),Ax)))
+    W=-2*V*1j*Ohm
+    
+    D=np.linalg.det(Ax+Bx);
+    F= np.divide(np.linalg.det(np.matmul((sp.linalg.sqrtm(np.eye(4)-np.linalg.matrix_power(np.linalg.inv(W),2))+np.eye(4)),np.matmul(W,1j*Ohm))),D, where=D!=0)**(0.25)
+    
+    F=np.sqrt(1/(np.linalg.det(Ax+Bx)))
+    return F**2
+ 
+def Cov_to_Adjacency(C):
+    X=Permute_XPXP_to_XXPP(C)
+    L=len(X[0]);
+    U=np.linalg.inv(2*X[0:int(0.5*L),0:int(0.5*L)])
+    V=np.matmul(U,2*X[0:int(0.5*L),int(0.5*L):L])
+    Z=V+1j*U
+    
+    return Z
+    
+def CycleLastMode(X):
+    '''
+    
+
+    Parameters
+    ----------
+    X : 2D array
+        Covariance matrix.
+
+    Returns
+    -------
+    X_KD : 2D array
+         same covariance matrix with the last mode cycled to the front.
+
+    '''
+    n=len(X[0])
+    A1=X[n-2:n,n-2:n]
+    A1C=X[0:n-2,n-2:n]
+    
+    X_KD=np.block([
+        
+        [A1,np.transpose(A1C)],
+        [A1C,X[0:n-2,0:n-2]]
+                    ])
+    
+    return X_KD
+
+def KD(r,N,dynamic):
+    '''
+    
+
+    Parameters
+    ----------
+    N : integer
+        Number of modes in the resulting state.
+
+    Returns
+    -------
+    cov : Knight's distance measured covariance matrix of N modes. Measurement parameters are randomly picked. Change it to set them manually.  
+        2d array of floating points.
+
+    '''
+    if dynamic==False:
+        Cov_1D=MakeCluster(r, 2*N, 1, 8, 1)
+    elif dynamic==True:        
+        Cov_1D=MakeDynamicCluster(r, 2*N, np.zeros(2*N), 1, 8, 1)
     
     
-    Haar_real=np.real(Fid_Haar)
-    Haar_im=np.imag(Fid_Haar)
-    Fid_real=np.real(Fid)
-    Fid_im=np.imag(Fid)
+    A=chop(HD_last_mode(HD_first_mode(Cov_1D, 0),0))
+    
+    parameters=np.random.uniform(low=-0.5*np.pi, high=0.5*np.pi, size=(3*N-2,)).tolist()
+    
+    #parameters=[]  #set parameters manually here and comment the random selection of parameters.
     
     
-    plt.figure()
-    plt.hist2d(Haar_real, Haar_im, bins=[150,150],range=[[-1,1],[-1,1]],cmap=plt.cm.seismic)
-    plt.xlabel("Re(F)")
-    plt.ylabel("Im(F)")
-    plt.colorbar()
-    plt.title("PDF(F): Haar Distributed U("+str(N)+') matrices over the unit circle.');
-    
-    plt.figure()
-    plt.hist2d(Fid_real, Fid_im, bins=[150,150],range=[[-1,1],[-1,1]],cmap=plt.cm.seismic)
-    plt.xlabel("Re(F)")
-    plt.ylabel("Im(F)")
-    plt.colorbar()
-    plt.title("PDF(F): Programmed "+str(N)+"-D Unitary matrices over the unit circle.");
-    
+    #even N
+    if np.mod(N,2)==0:
+        cov=A
+        mc=0
+        while mc<N-1:
+               
+            if np.mod(mc,2)==0:
+                i=0
+                cov=CycleLastMode(cov)
+                while i<4:        
+                    cov=HD_last_mode(cov, parameters.pop(0))
+                    i=i+1;                
+                mc=mc+1;
+                    
+            elif np.mod(mc,2)!=0:
+                i=0
+                cov=CycleLastMode(cov)
+                while i<2:        
+                    cov=HD_last_mode(cov, parameters.pop(0))
+                    i=i+1;
+               
+                mc=mc+1;
+    else:
+    #odd N
+        cov=A
+        mc=0
+        
+        while mc<N:
+            
+            if np.mod(mc,2)==0:
+                i=0
+                if mc==N-1:
+                    cov=CycleLastMode(cov)
+                    while i<1:        
+                        cov=HD_last_mode(cov,  parameters.pop(0))
+                        i=i+1; 
+                    
+                    mc=mc+1
+                    
+                else:
+                    cov=CycleLastMode(cov)
+                    while i<4:        
+                        cov=HD_last_mode(cov,  parameters.pop(0))
+                        i=i+1; 
+                    
+                    mc=mc+1;
+                    
+            elif np.mod(mc,2)!=0:
+                i=0
+                cov=CycleLastMode(cov)
+                while i<2:        
+                    cov=HD_last_mode(cov,  parameters.pop(0))
+                    i=i+1;
+                
+                mc=mc+1;
+            
+    return cov
