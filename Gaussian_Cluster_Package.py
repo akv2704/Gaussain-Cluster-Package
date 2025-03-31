@@ -24,51 +24,6 @@ from numpy import linalg as la
 def chop(expr, delta=10**-10):
     return np.ma.masked_inside(expr, -delta, delta).filled(0)
 
-
-def nearestPD(A):
-    """Find the nearest positive-definite matrix to input
-
-    A Python/Numpy port of John D'Errico's `nearestSPD` MATLAB code [1], which
-    credits [2].
-
-    [1] https://www.mathworks.com/matlabcentral/fileexchange/42885-nearestspd
-
-    [2] N.J. Higham, "Computing a nearest symmetric positive semidefinite
-    matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
-    """
-
-    B = (A + A.T) / 2
-    _, s, V = la.svd(B)
-
-    H = np.dot(V.T, np.dot(np.diag(s), V))
-
-    A2 = (B + H) / 2
-
-    A3 = (A2 + A2.T) / 2
-
-    if isPD(A3):
-        return A3
-
-    spacing = np.spacing(la.norm(A))
-    # The above is different from [1]. It appears that MATLAB's `chol` Cholesky
-    # decomposition will accept matrixes with exactly 0-eigenvalue, whereas
-    # Numpy's will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
-    # for `np.spacing`), we use the above definition. CAVEAT: our `spacing`
-    # will be much larger than [1]'s `eps(mineig)`, since `mineig` is usually on
-    # the order of 1e-16, and `eps(1e-16)` is on the order of 1e-34, whereas
-    # `spacing` will, for Gaussian random matrixes of small dimension, be on
-    # othe order of 1e-16. In practice, both ways converge, as the unit test
-    # below suggests.
-    I = np.eye(A.shape[0])
-    k = 1
-    while not isPD(A3):
-        mineig = np.min(np.real(la.eigvals(A3)))
-        A3 += I * (-mineig * k**2 + spacing)
-        k += 1
-
-    return A3
-
-
 def isPD(B):
     """Returns true when input is positive-definite, via Cholesky"""
     try:
@@ -91,8 +46,8 @@ def SymToUni(X):
     return U;
 
 def PatternedHomodyne(X,Y):
-    '''Homodyne the B spatial modes out from a covaiance matrix X, using thepattern Y.
-    Note that the inputmatrix X must be in the xpxpformat and NOT in the xxpp format.'''
+    '''Homodyne the B spatial modes out from a covaiance matrix X, using the pattern Y.
+    Note that the input matrix X must be in the xpxp format and NOT in the xxpp format.'''
     p=len(X[0]); #Find the size of the matrix
     n=int(p/4); #Number of EPR pairs
     
@@ -111,7 +66,7 @@ def PatternedHomodyne(X,Y):
         #select and construct a rotator in the SO(2) group using the pattern.
         R=[[np.cos(Y[j]), -np.sin(Y[j])],[np.sin(Y[j]), np.cos(Y[j])]]; 
 
-        #Where are the q elements of the B spatial mode
+        #Where are the q elements of the B spatial mode?
         k=Bq_index[n-j-1];   
         #Extract the matrix (2 x 2) for homodyned mode with rotation
         #implemented.
@@ -127,22 +82,19 @@ def PatternedHomodyne(X,Y):
         else:
             B=np.matmul(np.matmul(R,Target[k:k+2,k:k+2]),np.transpose(R));
             #Extract the matrix (2n-2 x 2n-2) for the rest of the modes
-            A=np.block([[Target[0:k,0:k],Target[0:k, k+2:(4*n)-2*j]],[Target[k+2:(4*n)-2*j,0:k], Target[k+2:(4*n)-2*j,k+2:(4*n)-2*j]]]);
+            A=np.block([[Target[0:k,0:k],Target[0:k, k+2:]],[Target[k+2:,0:k], Target[k+2:,k+2:]]]);
             #extract the off diagonal block matrix and its transpose with rotation
             #implemented.
-            C=np.matmul(np.block([[Target[0:k,k:k+2]],[Target[k+2:(4*n)-2*j,k:k+2]]]),np.transpose(R));
+            C=np.matmul(np.block([[Target[0:k,k:k+2]],[Target[k+2:,k:k+2]]]),np.transpose(R));
             CT=np.transpose(C);
                
+        V=np.linalg.pinv(np.matmul(np.matmul(PMM,B),PMM))
+        
         #subtrahend for the homodyne result
-        G=np.matmul(np.matmul(C,PMM),CT);
+        G=np.matmul(np.matmul(C,V),CT);
         #The matrix for the Moore-Penrose psuedoinverse
-        v=np.matmul(np.matmul(PMM,B),PMM);
-        scalar=v[0,0];
-
-        if scalar==0:
-            Target=A; #Moore penrose inverse of a null matrix is null.
-        else:
-            Target=A-G*(1/scalar); #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
+        
+        Target=A-G; #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
         
 
         
@@ -167,7 +119,7 @@ def BeamSplitter(M,N,d,eta):
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
     '''
-    Z=np.zeros((2*d,2*d), dtype=float);
+    Z=np.zeros((2*d,2*d));
       
     q_index=[];
     p_index=[];
@@ -198,15 +150,16 @@ def BeamSplitter(M,N,d,eta):
                         Z[j+1][q_index[N]]=0;
                         Z[j+1][q_index[N]+1]=np.sqrt(1-eta);
             
-                        Z[q_index[N]][j]=np.sqrt(1-eta);
+                        Z[q_index[N]][j]=-np.sqrt(1-eta);
                         Z[q_index[N]][j+1]=0;
-                        Z[q_index[N]][q_index[N]]=-np.sqrt(eta);
+                        Z[q_index[N]][q_index[N]]=np.sqrt(eta);
                         Z[q_index[N]][q_index[N]+1]=0;
             
                         Z[q_index[N]+1][j]=0;
-                        Z[q_index[N]+1][j+1]=np.sqrt(1-eta);
+                        Z[q_index[N]+1][j+1]=-np.sqrt(1-eta);
                         Z[q_index[N]+1][q_index[N]]=0;
-                        Z[q_index[N]+1][q_index[N]+1]=-np.sqrt(eta);
+                        Z[q_index[N]+1][q_index[N]+1]=np.sqrt(eta);
+                        
             elif ((j in [(q_index[M]),(p_index[M]),(q_index[N]),(p_index[N])])==False):
                         #Here, we set the idle B modes to 1 so the quadratures
                         #don't disappear.
@@ -227,7 +180,7 @@ def BS(M,d,eta):
     function is BS. The number M corresponds to a delay of Tau=(M-1) modes. 
     
     The function returns the beam splitter transform in the xpxp format.
-    Make sure M is a sensible number and is less than the total number ofmodes.
+    Make sure M is a sensible number and is less than the total number of modes.
     
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% || sqrt(eta)       0         sqrt(1-eta)        0       || %%
@@ -272,15 +225,15 @@ def BS(M,d,eta):
                         Z[k+1][N]=0;
                         Z[k+1][N+1]=np.sqrt(1-eta);
             
-                        Z[N][k]=np.sqrt(1-eta);
+                        Z[N][k]=-np.sqrt(1-eta);
                         Z[N][k+1]=0;
-                        Z[N][N]=-np.sqrt(eta);
+                        Z[N][N]=np.sqrt(eta);
                         Z[N][N+1]=0;
             
                         Z[N+1][k]=0;
-                        Z[N+1][k+1]=np.sqrt(1-eta);
+                        Z[N+1][k+1]=-np.sqrt(1-eta);
                         Z[N+1][N]=0;
-                        Z[N+1][N+1]=-np.sqrt(eta);
+                        Z[N+1][N+1]=np.sqrt(eta);
             else:
                         #Here, we set the idle B modes to 1 so the quadratures
                         #don't disappear.
@@ -337,12 +290,12 @@ def TwoModeSqueezing(r,n,angle):
     r : Array
         Array of mode wise squeezing parameters.
     n : integer number
-        number of modes.
+        number of pairs.
     angle : Array
         Array of angles of squeezing. Defaults to 0.
     Returns
     -------
-    Symplectic corresponding to two mode squeezing on n modes.
+    Symplectic corresponding to two mode squeezing on n pairs.
     '''
     
     if len(sys.argv)==3:
@@ -398,17 +351,16 @@ def MakeCluster(r,n,delay1,delay2,cltype):
         EPR=sp.linalg.block_diag(*b)
         #1D cluster
         M1D= np.matmul(np.matmul(BS(delay1+1,2*n,0.5),EPR),np.transpose(BS(delay1+1,2*n,0.5)));
+        M2D= np.matmul(np.matmul(BS(delay2+1,2*n,0.5),M1D),np.transpose(BS(delay2+1,2*n,0.5)));
+    
+        
         if cltype==1:
             return M1D;            
-            
-        elif(len(sys.argv)<3):
-            #2D cluster
-            M2D= np.matmul(np.matmul(BS(delay2+1,2*n,0.5),M1D),np.transpose(BS(delay2+1,2*n,0.5)));
-            return M2D;   
         
-        elif(cltype==2):
-            M2D= np.matmul(np.matmul(BS(delay2+1,2*n,0.5),M1D),np.transpose(BS(delay2+1,2*n,0.5)));
+        elif(cltype==2):            
             return M2D;
+        
+        
         
 def MakeDynamicCluster(r,n,angle,delay1,delay2,cltype):
         '''Function returns the ''4n X 4n'' covariance matrix of a 2D cluster state in the AxApBxBp (xpxp) format.
@@ -438,7 +390,7 @@ def ChoppedCluster(r,s,delay1,delay2,cltype):
 
     Parameters
     ----------
-    n : integer
+    s : integer
         chop a large cluster to a 2n mode smaller cluster.
 
     Returns
@@ -452,75 +404,11 @@ def ChoppedCluster(r,s,delay1,delay2,cltype):
         
     ################################FIXED BASIS SETTINGS############################################################
     
-    PMM=[[1, 0],[0, 0]]; #projector matrix
     Target=V;
     
-    
-    def HD_last_mode(Target):
-        q=len(Target[0])
-        #select and construct a rotator in the SO(2) group using the pattern.
-        R=[[np.cos(0), -np.sin(0)],[np.sin(0), np.cos(0)]]; 
-              
-        #Extract the matrix (2 x 2) for homodyned mode with rotation
-        #implemented.
-    
-            
-        B=np.matmul(np.matmul(R,Target[q-2:q,(q-1)-1:q]),np.transpose(R));
-        #Extract the matrix (2n-2 x 2n-2) for the rest of the modes
-        A=Target[0:q-2,0:q-2];
-        #extract the off diagonal block matrix and its transpose with rotation
-        #implemented.
-        C=np.matmul(Target[0:q-2,(q-1)-1:(q)],np.transpose(R));
-        CT=np.transpose(C);
-            
-                   
-        #subtrahend for the homodyne result
-        G=np.matmul(np.matmul(C,PMM),CT);
-        #The matrix for the Moore-Penrose psuedoinverse
-        v=np.matmul(np.matmul(PMM,B),PMM);
-        scalar=v[0,0];
-    
-        if scalar==0:
-            Target=A; #Moore penrose inverse of a null matrix is null.
-        else:
-            Target=A-G*(1/scalar); #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
-            
-        return Target
-        
-        
-   
-    def HD_first_mode(Target):
-        #select and construct a rotator in the SO(2) group using the pattern.
-        R=[[np.cos(0), -np.sin(0)],[np.sin(0), np.cos(0)]];
-              
-        #Extract the matrix (2 x 2) for homodyned mode with rotation
-        #implemented.
-    
-        
-        B=np.matmul(np.matmul(R,Target[0:2,0:2]),np.transpose(R));
-        #Extract the matrix (2n-2 x 2n-2) for the rest of the modes
-        A=Target[2:,2:];
-        #extract the off diagonal block matrix and its transpose with rotation
-        #implemented.
-        C=np.matmul(Target[2:,0:2],np.transpose(R));
-        CT=np.transpose(C);
-            
-                   
-        #subtrahend for the homodyne result
-        G=np.matmul(np.matmul(C,PMM),CT);
-        #The matrix for the Moore-Penrose psuedoinverse
-        v=np.matmul(np.matmul(PMM,B),PMM);
-        scalar=v[0,0];
-    
-        if scalar==0:
-            Target=A; #Moore penrose inverse of a null matrix is null.
-        else:
-            Target=A-G*(1/scalar); #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
-        
-        return Target 
     for i in range(n-s):
-        Target=HD_last_mode(Target);
-        Target=HD_first_mode(Target);
+        Target=HD_last_mode(Target,0);
+        Target=HD_first_mode(Target,0);
     
     
     return Target;
@@ -594,11 +482,28 @@ def covariance_to_unitary(V):
     complex 2D array
         The Unitary that transforms vacua into this covariance matrix.
     '''
-    (S_Eigen,S)=sf.decompositions.williamson(V,tol=1e-13)
+    (S_Eigen,S)=sf.decompositions.williamson(V,tol=1e-6)
     (K,Sr,L)=sf.decompositions.bloch_messiah(S,tol=1e-6)
     A=SymToUni(L);
     
     return A;
+
+def covariance_to_squeezing(V):
+    '''
+    
+    Parameters
+    ----------
+    V : 2D array
+        A positive definite matrix or covariance matrix in XPXP format.
+    Returns
+    -------
+    real 1D array
+        The effecting squeezing that goes through unitaries to make this covariance matrix.
+    '''
+    (S_Eigen,S)=sf.decompositions.williamson(V,tol=1e-13)
+    (K,Sr,L)=sf.decompositions.bloch_messiah(S,tol=1e-6)
+    
+    return Sr;
 
 def Generate_haar_unitary(N):
     """Generate a Haar-random matrix using the QR decomposition."""
@@ -615,7 +520,7 @@ def Generate_haar_unitary(N):
     # Step 4
     return np.dot(Q, Lambda)
 
-def Generate_random_symplectic(N,passive,mu,sigma):
+def Generate_random_symplectic(N,passive,low,high):
     '''
     Generate a haar random symplectioc matrix for N modes.
     passive=True gives a passive matrix
@@ -631,7 +536,7 @@ def Generate_random_symplectic(N,passive,mu,sigma):
     U=Generate_haar_unitary(N);
     P= np.block([[U.real, -U.imag], [U.imag, U.real]])
     
-    r = np.random.normal(mu,sigma,N)
+    r = np.random.uniform(low,high,N)
     Sq = np.diag(np.concatenate([np.exp(-r), np.exp(r)]))
     
     return np.matmul(O,np.matmul(Sq,P))
@@ -673,25 +578,22 @@ def HD_last_mode(Target,ang):
         #implemented.
     
             
-        B=np.matmul(np.matmul(R,Target[q-2:q,(q-1)-1:q]),np.transpose(R));
+        B=np.matmul(np.matmul(R,Target[q-2:q,q-2:q]),np.transpose(R));
         #Extract the matrix (2n-2 x 2n-2) for the rest of the modes
         A=Target[0:q-2,0:q-2];
         #extract the off diagonal block matrix and its transpose with rotation
         #implemented.
-        C=np.matmul(Target[0:q-2,(q-1)-1:(q)],np.transpose(R));
+        C=np.matmul(Target[0:q-2,q-2:q],np.transpose(R));
         CT=np.transpose(C);
             
-                   
+        
+        V=np.linalg.pinv(np.matmul(np.matmul(PMM,B),PMM))
+        
         #subtrahend for the homodyne result
-        G=np.matmul(np.matmul(C,PMM),CT);
+        G=np.matmul(np.matmul(C,V),CT);
         #The matrix for the Moore-Penrose psuedoinverse
-        v=np.matmul(np.matmul(PMM,B),PMM);
-        scalar=v[0,0];
-    
-        if scalar==0:
-            Target=A; #Moore penrose inverse of a null matrix is null.
-        else:
-            Target=A-G*(1/scalar); #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
+     
+        Target=A-G; #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
             
         return Target
         
@@ -715,18 +617,15 @@ def HD_first_mode(Target,ang):
         CT=np.transpose(C);
             
                    
-        #subtrahend for the homodyne result
-        G=np.matmul(np.matmul(C,PMM),CT);
-        #The matrix for the Moore-Penrose psuedoinverse
-        v=np.matmul(np.matmul(PMM,B),PMM);
-        scalar=v[0,0];
-    
-        if scalar==0:
-            Target=A; #Moore penrose inverse of a null matrix is null.
-        else:
-            Target=A-G*(1/scalar); #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
+        V=np.linalg.pinv(np.matmul(np.matmul(PMM,B),PMM))
         
-        return Target 
+        #subtrahend for the homodyne result
+        G=np.matmul(np.matmul(C,V),CT);
+        #The matrix for the Moore-Penrose psuedoinverse
+        
+        Target=A-G; #Use the (1,1) element of the MP pseudoinverse as in Brask, pg. 5.
+            
+        return Target
     
 def PureFidelity(Ax,Bx):
     '''
@@ -745,11 +644,12 @@ def PureFidelity(Ax,Bx):
     These correspond to both pure states.
 
     '''
-    F=1/np.sqrt(np.sqrt(np.linalg.det(Ax+Bx)))
+    F=1/np.sqrt(np.linalg.det(Ax+Bx))
     
-    return F**2
+    return F
+    
 
-    
+        
 def MixedFidelity(Ax,Bx):
     '''
     
@@ -785,7 +685,7 @@ def MixedFidelity(Ax,Bx):
     F=np.sqrt(1/(np.linalg.det(Ax+Bx)))
     return F**2
  
-def Cov_to_Adjacency(C):
+def cov_to_adjacency(C):
     X=Permute_XPXP_to_XXPP(C)
     L=len(X[0]);
     U=np.linalg.inv(2*X[0:int(0.5*L),0:int(0.5*L)])
@@ -793,6 +693,20 @@ def Cov_to_Adjacency(C):
     Z=V+1j*U
     
     return Z
+
+def adjacency_to_cov(Z):
+    U=np.imag(Z)
+    V=np.real(Z)
+    
+    C=0.5*np.block(
+        
+        [[np.linalg.inv(U),np.matmul(np.linalg.inv(U),V)],
+         [np.matmul(V,np.linalg.inv(U)),U+np.matmul(np.matmul(V,np.linalg.inv(U)),V)]
+            ]
+        
+        )
+    
+    return C
     
 def CycleLastMode(X):
     '''
@@ -837,12 +751,11 @@ def KD(r,N,dynamic):
 
     '''
     if dynamic==False:
-        Cov_1D=MakeCluster(r, 2*N, 1, 8, 1)
-    elif dynamic==True:        
-        Cov_1D=MakeDynamicCluster(r, 2*N, np.zeros(2*N), 1, 8, 1)
+        Cov_1D=ChoppedCluster(r, 2*N+2, 1, 8, 1)
     
+    parameters_init=np.random.uniform(low=-0.5*np.pi, high=0.5*np.pi, size=(6,)).tolist()
     
-    A=chop(HD_last_mode(HD_first_mode(Cov_1D, 0),0))
+    A=HD_last_mode(HD_last_mode(HD_last_mode(HD_first_mode(HD_first_mode(HD_first_mode(Cov_1D,parameters_init[0]),parameters_init[1]),parameters_init[2]),parameters_init[3]),parameters_init[4]),parameters_init[5])
     
     parameters=np.random.uniform(low=-0.5*np.pi, high=0.5*np.pi, size=(3*N-2,)).tolist()
     
@@ -906,3 +819,51 @@ def KD(r,N,dynamic):
                 mc=mc+1;
             
     return cov
+
+
+def TwoD_strategy2(r,N,delay2):
+    
+    cov=ChoppedCluster(r,(8*(N-1)+1),1,delay2,2) #setup 2D cluster
+    parameters=np.random.uniform(low=-0.5*np.pi, high=0.5*np.pi, size=(N,)).tolist() #setup measurement angles
+    
+    
+    #measurement begins
+    cov_target=HD_last_mode(cov,0)
+    k=0;
+    
+    while k<N-2:
+        counter_14=0
+        
+        cov_target=HD_last_mode(cov_target,parameters.pop())
+        cov_target=CycleLastMode(cov_target)
+        while counter_14<14:
+            cov_target=HD_last_mode(cov_target,0)
+            counter_14=counter_14+1
+        
+        k=k+1
+        
+        
+    counter_12=0
+    cov_target=HD_last_mode(cov_target,parameters.pop())
+    cov_target=CycleLastMode(cov_target)
+    
+    while counter_12<12:
+        cov_target=HD_last_mode(cov_target,0)
+        counter_12=counter_12+1
+        
+        
+    cov_target=HD_last_mode(cov_target,parameters.pop())
+    cov_target=CycleLastMode(cov_target)
+    
+    
+    cov_target=HD_last_mode(cov_target,0)
+    
+    return(cov_target)
+
+def Unitary_to_symplectic(U,Sq):
+    X=np.real(U)
+    Y=np.imag(U)
+    O=np.block([[X,-Y],[Y,X]])
+    Symplectic=np.matmul(O,Sq)
+    
+    return Symplectic
